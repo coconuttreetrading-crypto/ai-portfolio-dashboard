@@ -161,7 +161,9 @@ for idx, ticker in enumerate(portfolio.keys()):
             col2.metric(f"Change", f"{ticker_gain:.2f}%")
             col3.metric(f"Quantity", portfolio[ticker])
             
-            # Price chart
+            # Price chart with 20-day moving average
+            df['SMA_20'] = df['Close'].rolling(window=20).mean()
+            
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=df.index,
@@ -172,7 +174,7 @@ for idx, ticker in enumerate(portfolio.keys()):
             ))
             fig.add_trace(go.Scatter(
                 x=df.index,
-                y=df['SMA_20'] if 'SMA_20' in df.columns else df['Close'].rolling(20).mean(),
+                y=df['SMA_20'],
                 mode='lines',
                 name='20-Day MA',
                 line=dict(color='orange', dash='dash')

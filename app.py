@@ -67,16 +67,32 @@ def fetch_data(tickers, start, end):
             df = yf.download(ticker, start=start, end=end, progress=False, quiet=True)
             if len(df) > 0:
                 data[ticker] = df
-        except:
-            pass
+        except Exception as e:
+            st.warning(f"Could not fetch {ticker}: {str(e)}")
     return data
+
+def generate_sample_data(ticker, days):
+    """Generate sample data if real data fails"""
+    dates = pd.date_range(end=datetime.now(), periods=days, freq='D')
+    np.random.seed(hash(ticker) % 2**32)
+    prices = 100 + np.cumsum(np.random.randn(len(dates)) * 2)
+    df = pd.DataFrame({
+        'Close': prices,
+        'High': prices * 1.02,
+        'Low': prices * 0.98,
+        'Open': prices * 0.99,
+        'Volume': np.random.randint(1000000, 10000000, len(dates))
+    }, index=dates)
+    return df
 
 with st.spinner("📡 Fetching market data..."):
     market_data = fetch_data(list(portfolio.keys()), start_date, end_date)
 
+# Fallback to sample data if fetch failed
 if len(market_data) == 0:
-    st.error("❌ Could not fetch data.")
-    st.stop()
+    st.warning("⚠️ Could not fetch live data. Using sample data for demonstration.")
+    for ticker in portfolio.keys():
+        market_data[ticker] = generate_sample_data(ticker, days_back)
 
 # ===== CALCULATE METRICS =====
 latest_prices = {}

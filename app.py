@@ -14,15 +14,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
-st.markdown("""
-    <style>
-    .main {
-        padding-top: 2rem;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 # ===== SIDEBAR =====
 st.sidebar.title("🎯 Portfolio Configuration")
 
@@ -31,7 +22,6 @@ portfolio_type = st.sidebar.selectbox(
     ["Sample Portfolio", "Custom Portfolio"]
 )
 
-# Sample portfolio data
 SAMPLE_PORTFOLIO = {
     "AAPL": 10,
     "MSFT": 8,
@@ -56,11 +46,10 @@ else:
             if line.strip():
                 ticker, qty = line.split(':')
                 portfolio[ticker.strip()] = int(qty)
-    except Exception as e:
+    except:
         st.sidebar.error("❌ Invalid format. Use TICKER:QUANTITY")
         portfolio = SAMPLE_PORTFOLIO
 
-# Date range
 st.sidebar.subheader("📅 Time Range")
 days_back = st.sidebar.slider("Days of history", 30, 365, 90)
 end_date = datetime.now()
@@ -70,7 +59,6 @@ start_date = end_date - timedelta(days=days_back)
 st.title("📊 AI Portfolio Dashboard")
 st.markdown("Real-time portfolio analysis and performance tracking")
 
-# Fetch data
 @st.cache_data(ttl=3600)
 def fetch_data(tickers, start, end):
     data = {}
@@ -79,7 +67,7 @@ def fetch_data(tickers, start, end):
             df = yf.download(ticker, start=start, end=end, progress=False, quiet=True)
             if len(df) > 0:
                 data[ticker] = df
-        except Exception:
+        except:
             pass
     return data
 
@@ -87,35 +75,34 @@ with st.spinner("📡 Fetching market data..."):
     market_data = fetch_data(list(portfolio.keys()), start_date, end_date)
 
 if len(market_data) == 0:
-    st.error("❌ Could not fetch data. Please check your internet connection.")
+    st.error("❌ Could not fetch data.")
     st.stop()
+
+# ===== CALCULATE METRICS =====
+latest_prices = {}
+start_prices = {}
+
+for ticker in portfolio.keys():
+    if ticker in market_data:
+        df = market_data[ticker]
+        latest_prices[ticker] = float(df['Close'].iloc[-1])
+        start_prices[ticker] = float(df['Close'].iloc[0])
+
+total_value = 0.0
+portfolio_value_start = 0.0
+
+for ticker, qty in portfolio.items():
+    if ticker in latest_prices:
+        total_value += latest_prices[ticker] * qty
+    if ticker in start_prices:
+        portfolio_value_start += start_prices[ticker] * qty
+
+gain_loss = total_value - portfolio_value_start
+gain_loss_pct = (gain_loss / portfolio_value_start * 100) if portfolio_value_start > 0 else 0.0
 
 # ===== KEY METRICS =====
 st.subheader("📈 Portfolio Metrics")
-
 col1, col2, col3, col4 = st.columns(4)
-
-# Calculate total value - ensure all values are floats
-latest_prices = {}
-for ticker in portfolio.keys():
-    if ticker in market_data:
-        price = market_data[ticker]['Close'].iloc[-1]
-        latest_prices[ticker] = float(price)
-
-total_value = sum(latest_prices.get(t, 0) * q for t, q in portfolio.items())
-
-# Calculate starting value - ensure all values are floats
-portfolio_value_start = 0.0
-for t in portfolio.keys():
-    if t in market_data:
-        start_price = market_data[t]['Close'].iloc[0]
-        portfolio_value_start += float(start_price) * portfolio[t]
-
-gain_loss = float(total_value) - float(portfolio_value_start)
-if float(portfolio_value_start) > 0:
-    gain_loss_pct = (gain_loss / float(portfolio_value_start)) * 100
-else:
-    gain_loss_pct = 0.0
 
 col1.metric("💰 Portfolio Value", f"${total_value:,.2f}")
 col2.metric("📊 Total Gain/Loss", f"${gain_loss:,.2f}", f"{gain_loss_pct:.2f}%")
@@ -128,97 +115,61 @@ st.subheader("🥧 Portfolio Composition")
 holdings_value = {}
 for ticker, qty in portfolio.items():
     if ticker in latest_prices:
-        holdings_value[ticker] = float(latest_prices[ticker]) * qty
+        holdings_value[ticker] = latest_prices[ticker] * qty
 
-if len(holdings_value) > 0:
-    fig_pie = go.Figure(data=[go.Pie(
-        labels=list(holdings_value.keys()),
-        values=list(holdings_value.values()),
-        hole=0.3
-    )])
-    fig_pie.update_layout(
-        title="Portfolio Distribution by Value",
-        height=400,
-        showlegend=True
-    )
-    st.plotly_chart(fig_pie, use_container_width=True)
+fig_pie = go.Figure(data=[go.Pie(
+    labels=list(holdings_value.keys()),
+    values=list(holdings_value.values()),
+    hole=0.3
+)])
+fig_pie.update_layout(title="Portfolio Distribution by Value", height=400)
+st.plotly_chart(fig_pie, use_container_width=True)
 
 # ===== PRICE CHARTS =====
 st.subheader("📉 Individual Stock Performance")
+tabs = st.tabs([f"{t}" for t in portfolio.keys()])
 
-if len(portfolio) > 0:
-    tabs = st.tabs([f"{t}" for t in portfolio.keys()])
-    
-    for idx, ticker in enumerate(portfolio.keys()):
-        with tabs[idx]:
-            if ticker in market_data:
-                df = market_data[ticker].copy()
-                
-                col1, col2, col3 = st.columns(3)
-                current_price = float(df['Close'].iloc[-1])
-                start_price = float(df['Close'].iloc[0])
-                ticker_gain = ((current_price - start_price) / start_price) * 100
-                
-                col1.metric(f"{ticker} Price", f"${current_price:.2f}")
-                col2.metric(f"Change", f"{ticker_gain:.2f}%")
-                col3.metric(f"Quantity", portfolio[ticker])
-                
-                # Calculate 20-day moving average
-                df['SMA_20'] = df['Close'].rolling(window=20).mean()
-                
-                # Price chart
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=df.index,
-                    y=df['Close'].values,
-                    mode='lines',
-                    name='Close Price',
-                    line=dict(color='#1f77b4', width=2)
-                ))
-                fig.add_trace(go.Scatter(
-                    x=df.index,
-                    y=df['SMA_20'].values,
-                    mode='lines',
-                    name='20-Day MA',
-                    line=dict(color='orange', dash='dash')
-                ))
-                fig.update_layout(
-                    title=f"{ticker} Price History",
-                    xaxis_title="Date",
-                    yaxis_title="Price ($)",
-                    height=400,
-                    hovermode='x unified'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-# ===== PORTFOLIO HOLDINGS TABLE =====
-st.subheader("📋 Holdings Summary")
-
-if len(portfolio) > 0:
-    holdings_list = []
-    for ticker in portfolio.keys():
-        ticker_value = holdings_value.get(ticker, 0.0)
-        if float(total_value) > 0:
-            pct = (float(ticker_value) / float(total_value)) * 100
-        else:
-            pct = 0.0
+for idx, ticker in enumerate(portfolio.keys()):
+    with tabs[idx]:
+        if ticker in market_data:
+            df = market_data[ticker].copy()
             
-        holdings_list.append({
-            "Ticker": ticker,
-            "Quantity": portfolio[ticker],
-            "Current Price": f"${latest_prices.get(ticker, 0):.2f}",
-            "Value": f"${ticker_value:.2f}",
-            "% of Portfolio": f"{pct:.1f}%"
-        })
-    
-    holdings_df = pd.DataFrame(holdings_list)
-    st.dataframe(holdings_df, use_container_width=True)
+            current_price = float(df['Close'].iloc[-1])
+            start_price = float(df['Close'].iloc[0])
+            ticker_gain = ((current_price - start_price) / start_price) * 100
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric(f"{ticker} Price", f"${current_price:.2f}")
+            col2.metric(f"Change", f"{ticker_gain:.2f}%")
+            col3.metric(f"Quantity", portfolio[ticker])
+            
+            # Calculate moving average
+            df['SMA_20'] = df['Close'].rolling(window=20).mean()
+            
+            # Create chart
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=df.index, y=df['Close'].values, mode='lines', name='Close Price', line=dict(color='#1f77b4')))
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'].values, mode='lines', name='20-Day MA', line=dict(color='orange', dash='dash')))
+            fig.update_layout(title=f"{ticker} Price History", xaxis_title="Date", yaxis_title="Price ($)", height=400, hovermode='x unified')
+            st.plotly_chart(fig, use_container_width=True)
 
-# ===== FOOTER =====
+# ===== HOLDINGS TABLE =====
+st.subheader("📋 Holdings Summary")
+holdings_list = []
+
+for ticker in portfolio.keys():
+    value = holdings_value.get(ticker, 0.0)
+    pct = (value / total_value * 100) if total_value > 0 else 0.0
+    holdings_list.append({
+        "Ticker": ticker,
+        "Quantity": portfolio[ticker],
+        "Current Price": f"${latest_prices.get(ticker, 0):.2f}",
+        "Value": f"${value:.2f}",
+        "% of Portfolio": f"{pct:.1f}%"
+    })
+
+holdings_df = pd.DataFrame(holdings_list)
+st.dataframe(holdings_df, use_container_width=True)
+
 st.divider()
-st.markdown(f"""
-<div style='text-align: center; color: gray; font-size: 12px;'>
-    Last updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")}<br>
-    📊 AI Portfolio Dashboard | Data from Yahoo Finance
-</div>
-""", unsafe_allow_html=True)
+st.markdown(f"<div style='text-align: center; color: gray; font-size: 12px;'>Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}<br>📊 AI Portfolio Dashboard</div>", unsafe_allow_html=True)

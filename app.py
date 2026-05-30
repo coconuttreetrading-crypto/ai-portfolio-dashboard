@@ -64,11 +64,11 @@ def fetch_data(tickers, start, end):
     data = {}
     for ticker in tickers:
         try:
-            df = yf.download(ticker, start=start, end=end, progress=False, quiet=True)
+            df = yf.download(ticker, start=start, end=end, progress=False)
             if len(df) > 0:
                 data[ticker] = df
         except Exception as e:
-            st.warning(f"Could not fetch {ticker}: {str(e)}")
+            pass
     return data
 
 def generate_sample_data(ticker, days):
